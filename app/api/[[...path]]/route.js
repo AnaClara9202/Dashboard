@@ -9,13 +9,24 @@ const uri = process.env.MONGO_URL
 const dbName = process.env.DB_NAME || 'sinergia'
 const JWT_SECRET = process.env.JWT_SECRET || 'sinergia-dev-secret-2026'
 
-let cachedClient = null
+// Global cache for serverless (Vercel) — reuse Mongo connection across invocations
+let cachedClient = global._sinergiaMongoClient || null
+let cachedDb = global._sinergiaMongoDb || null
+let seeded = global._sinergiaSeeded || false
+
 async function getDb() {
-  if (!cachedClient) {
-    cachedClient = new MongoClient(uri)
-    await cachedClient.connect()
+  if (!uri || typeof uri !== 'string' || !uri.startsWith('mongodb')) {
+    throw new Error('Configuração ausente: defina a variável de ambiente MONGO_URL (ex.: mongodb+srv://user:pass@cluster.mongodb.net) no painel do Vercel em Settings → Environment Variables.')
   }
-  return cachedClient.db(dbName)
+  if (cachedDb) return cachedDb
+  if (!cachedClient) {
+    cachedClient = new MongoClient(uri, { serverSelectionTimeoutMS: 8000 })
+    await cachedClient.connect()
+    global._sinergiaMongoClient = cachedClient
+  }
+  cachedDb = cachedClient.db(dbName)
+  global._sinergiaMongoDb = cachedDb
+  return cachedDb
 }
 
 const json = (data, init = {}) => NextResponse.json(data, init)
@@ -81,6 +92,7 @@ const IMPORTED_PRODUCTS = [
 
 // Seed demo (products + movements + settings + sanitary)
 async function ensureSeed(db) {
+  if (seeded) return
   const count = await db.collection('products').countDocuments()
   if (count === 0) {
     const now = new Date()
@@ -138,6 +150,8 @@ async function ensureSeed(db) {
   if (sanCount === 0) {
     await db.collection('sanitary').insertMany(SANITARY_SEED.map(s => ({ id: uuidv4(), ...s })))
   }
+  seeded = true
+  global._sinergiaSeeded = true
 }
 
 function signToken(user) {
@@ -162,14 +176,17 @@ async function handler(request, ctx) {
 
     // ---------- AUTH ----------
     if (path === 'auth/register' && method === 'POST') {
-      const b = await request.json()
-      if (!b.email || !b.password) return err('E-mail e senha obrigatórios', 400)
-      const exists = await db.collection('users').findOne({ email: b.email.toLowerCase() })
+      const b = await request.json().catch(() => ({}))
+      const email = typeof b?.email === 'string' ? b.email.trim().toLowerCase() : ''
+      const password = typeof b?.password === 'string' ? b.password : ''
+      if (!email || !password) return err('E-mail e senha obrigatórios', 400)
+      if (password.length < 4) return err('Senha muito curta (mínimo 4 caracteres)', 400)
+      const exists = await db.collection('users').findOne({ email })
       if (exists) return err('E-mail já cadastrado', 409)
-      const hash = await bcrypt.hash(b.password, 8)
+      const hash = await bcrypt.hash(password, 8)
       const isFirst = (await db.collection('users').countDocuments()) === 0
       const u = {
-        id: uuidv4(), email: b.email.toLowerCase(), name: b.name || b.email.split('@')[0],
+        id: uuidv4(), email, name: (b.name && String(b.name).trim()) || email.split('@')[0],
         passwordHash: hash, provider: 'email', blocked: false, role: isFirst ? 'admin' : 'user',
         subscriptionActive: true, createdAt: new Date().toISOString(),
       }
@@ -177,27 +194,31 @@ async function handler(request, ctx) {
       return json({ token: signToken(u), user: { id: u.id, email: u.email, name: u.name, role: u.role } })
     }
     if (path === 'auth/login' && method === 'POST') {
-      const b = await request.json()
-      const u = await db.collection('users').findOne({ email: (b.email || '').toLowerCase() })
+      const b = await request.json().catch(() => ({}))
+      const email = typeof b?.email === 'string' ? b.email.trim().toLowerCase() : ''
+      const password = typeof b?.password === 'string' ? b.password : ''
+      if (!email || !password) return err('E-mail e senha obrigatórios', 400)
+      const u = await db.collection('users').findOne({ email })
       if (!u) return err('Credenciais inválidas', 401)
       if (u.blocked) return err('Conta bloqueada. Pacote mensal em atraso — entre em contato com a Sinergia.', 403)
-      const ok = u.passwordHash ? await bcrypt.compare(b.password || '', u.passwordHash) : false
+      if (!u.passwordHash || typeof u.passwordHash !== 'string') return err('Esta conta usa login com Google. Use o botão "Continuar com Google".', 401)
+      let ok = false
+      try { ok = await bcrypt.compare(password, u.passwordHash) } catch { ok = false }
       if (!ok) return err('Credenciais inválidas', 401)
       return json({ token: signToken(u), user: { id: u.id, email: u.email, name: u.name, role: u.role } })
     }
     if (path === 'auth/google' && method === 'POST') {
-      // Simplified Google sign-in: front sends { email, name, picture }
-      const b = await request.json()
-      if (!b.email) return err('E-mail obrigatório', 400)
-      const email = b.email.toLowerCase()
+      const b = await request.json().catch(() => ({}))
+      const email = typeof b?.email === 'string' ? b.email.trim().toLowerCase() : ''
+      if (!email) return err('E-mail obrigatório', 400)
       let u = await db.collection('users').findOne({ email })
       if (!u) {
         const isFirst = (await db.collection('users').countDocuments()) === 0
-        u = { id: uuidv4(), email, name: b.name || email.split('@')[0], picture: b.picture || '', provider: 'google', blocked: false, role: isFirst ? 'admin' : 'user', subscriptionActive: true, createdAt: new Date().toISOString() }
+        u = { id: uuidv4(), email, name: (b.name && String(b.name).trim()) || email.split('@')[0], picture: b.picture || '', provider: 'google', blocked: false, role: isFirst ? 'admin' : 'user', subscriptionActive: true, createdAt: new Date().toISOString() }
         await db.collection('users').insertOne(u)
       }
       if (u.blocked) return err('Conta bloqueada. Pacote mensal em atraso.', 403)
-      return json({ token: signToken(u), user: { id: u.id, email: u.email, name: u.name, role: u.role, picture: u.picture } })
+      return json({ token: signToken(u), user: { id: u.id, email: u.email, name: u.name, role: u.role, picture: u.picture || '' } })
     }
     if (path === 'auth/me' && method === 'GET') {
       const a = getAuth(request); if (!a) return err('Não autenticado', 401)
@@ -484,8 +505,15 @@ async function handler(request, ctx) {
 
     return err('Rota não encontrada: ' + path, 404)
   } catch (e) {
-    console.error('API error:', e)
-    return err(e.message || 'Erro interno', 500)
+    console.error('API error:', e?.message, e?.stack)
+    // Send back a clean message so front doesn't crash on parse
+    const msg = e?.message || 'Erro interno do servidor'
+    const detail = msg.includes('MONGO_URL')
+      ? msg
+      : msg.startsWith('Cannot read properties')
+        ? 'Falha de configuração no servidor. Verifique se MONGO_URL está definida corretamente no Vercel (Settings → Environment Variables) e faça o Redeploy.'
+        : msg
+    return err(detail, 500)
   }
 }
 
@@ -494,3 +522,6 @@ export const POST = handler
 export const PUT = handler
 export const DELETE = handler
 export const PATCH = handler
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
