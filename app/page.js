@@ -31,7 +31,9 @@ import { toast, Toaster } from 'sonner'
 
 const CATEGORIES = ['Matéria-Prima', 'Frios/Laticínios', 'Embalagens', 'Insumos', 'Produto Final', 'Outros']
 const CODE_KEYS = ['A', 'B', 'C']
-const currency = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`
+const currency = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v || 0))
+const nfmt = (v) => new Intl.NumberFormat('pt-BR').format(Number(v || 0))
+const nfmt2 = (v) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v || 0))
 const daysUntil = (iso) => Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000)
 const fefoBucket = (product, settings) => {
   const d = daysUntil(product.expiresAt)
@@ -183,13 +185,13 @@ function Dashboard({ analytics, criticalCount }) {
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KPI icon={Package} label="Produtos cadastrados" value={analytics?.totalProducts ?? '-'} accent="emerald" />
-        <KPI icon={Boxes} label="Unidades em estoque" value={analytics?.totalStock ?? '-'} accent="blue" />
+        <KPI icon={Boxes} label="Unidades em estoque" value={analytics ? nfmt(analytics.totalStock) : '-'} accent="blue" />
         <KPI icon={TrendingUp} label="Valor total" value={currency(analytics?.totalValue || 0)} accent="violet" />
         <KPI icon={AlertTriangle} label="Alertas FEFO" value={criticalCount} accent="amber" hint="Críticos + vencidos" />
       </div>
       <Card className="border-border/60"><CardHeader className="pb-2"><CardTitle className="text-base">Movimentação de estoque (30 dias)</CardTitle><CardDescription>Entradas × Saídas diárias</CardDescription></CardHeader>
         <CardContent><div className="h-72 w-full"><ResponsiveContainer width="100%" height="100%"><AreaChart data={analytics?.series || []} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}><defs><linearGradient id="gIn" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={0.5} /><stop offset="100%" stopColor="#10b981" stopOpacity={0} /></linearGradient><linearGradient id="gOut" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f43f5e" stopOpacity={0.4} /><stop offset="100%" stopColor="#f43f5e" stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" opacity={0.2} /><XAxis dataKey="date" tickFormatter={v => v.slice(5)} fontSize={11} /><YAxis fontSize={11} /><Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Area type="monotone" dataKey="entrada" stroke="#10b981" fill="url(#gIn)" strokeWidth={2} /><Area type="monotone" dataKey="saida" stroke="#f43f5e" fill="url(#gOut)" strokeWidth={2} /></AreaChart></ResponsiveContainer></div></CardContent></Card>
-      <Card className="border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-transparent"><CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><div className="rounded-lg bg-emerald-600/15 p-2.5 text-emerald-600 dark:text-emerald-400"><TrendingUp className="h-5 w-5" /></div><div><p className="text-sm font-semibold">Projeção de demanda mensal</p><p className="text-xs text-muted-foreground">Baseado na mediana de saídas dos últimos 30 dias — resistente a picos.</p></div></div><div className="text-right"><p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{analytics?.projectedMonthly ?? 0}</p><p className="text-xs text-muted-foreground">unidades / próximo mês</p></div></CardContent></Card>
+      <Card className="border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-transparent"><CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><div className="rounded-lg bg-emerald-600/15 p-2.5 text-emerald-600 dark:text-emerald-400"><TrendingUp className="h-5 w-5" /></div><div><p className="text-sm font-semibold">Projeção de demanda mensal</p><p className="text-xs text-muted-foreground">Baseado na mediana de saídas dos últimos 30 dias — resistente a picos.</p></div></div><div className="text-right"><p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{nfmt(analytics?.projectedMonthly || 0)}</p><p className="text-xs text-muted-foreground">unidades / próximo mês</p></div></CardContent></Card>
     </div>
   )
 }
@@ -402,8 +404,8 @@ function AnalyticsTab({ analytics }) {
               <ArrowDownToLine className="h-4 w-4" />
               <p className="text-xs font-semibold uppercase">Entradas (30d)</p>
             </div>
-            <p className="mt-1 text-2xl font-bold text-emerald-700 dark:text-emerald-400">{analytics.totalIn30}</p>
-            <p className="text-xs text-muted-foreground">média {analytics.avgDailyIn}/dia</p>
+            <p className="mt-1 text-2xl font-bold text-emerald-700 dark:text-emerald-400">{nfmt(analytics.totalIn30)}</p>
+            <p className="text-xs text-muted-foreground">média {nfmt(analytics.avgDailyIn)}/dia</p>
           </CardContent>
         </Card>
         <Card className="border-rose-500/30 bg-rose-500/5">
@@ -412,8 +414,8 @@ function AnalyticsTab({ analytics }) {
               <ArrowUpFromLine className="h-4 w-4" />
               <p className="text-xs font-semibold uppercase">Saídas (30d)</p>
             </div>
-            <p className="mt-1 text-2xl font-bold text-rose-700 dark:text-rose-400">{analytics.totalOut30}</p>
-            <p className="text-xs text-muted-foreground">média {analytics.avgDailyOut}/dia</p>
+            <p className="mt-1 text-2xl font-bold text-rose-700 dark:text-rose-400">{nfmt(analytics.totalOut30)}</p>
+            <p className="text-xs text-muted-foreground">média {nfmt(analytics.avgDailyOut)}/dia</p>
           </CardContent>
         </Card>
         <Card className={balancePositive ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'}>
@@ -423,7 +425,7 @@ function AnalyticsTab({ analytics }) {
               <p className="text-xs font-semibold uppercase">Saldo (30d)</p>
             </div>
             <p className={`mt-1 text-2xl font-bold ${balancePositive ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
-              {balancePositive ? '+' : ''}{balance}
+              {balancePositive ? '+' : ''}{nfmt(balance)}
             </p>
             <p className="text-xs text-muted-foreground">{balancePositive ? 'estoque acumulando' : 'estoque diminuindo'}</p>
           </CardContent>
@@ -434,7 +436,7 @@ function AnalyticsTab({ analytics }) {
               <CalendarClock className="h-4 w-4" />
               <p className="text-xs font-semibold uppercase">Projeção mensal</p>
             </div>
-            <p className="mt-1 text-2xl font-bold text-violet-700 dark:text-violet-400">{analytics.projectedMonthly}</p>
+            <p className="mt-1 text-2xl font-bold text-violet-700 dark:text-violet-400">{nfmt(analytics.projectedMonthly)}</p>
             <p className="text-xs text-muted-foreground">mediana × 30 dias</p>
           </CardContent>
         </Card>
@@ -479,11 +481,11 @@ function AnalyticsTab({ analytics }) {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={analytics.categoryData || []} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                  <XAxis type="number" fontSize={11} tickFormatter={v => `R$${(v/1000).toFixed(0)}k`} />
+                  <XAxis type="number" fontSize={11} tickFormatter={v => v >= 1000 ? `R$ ${(v/1000).toFixed(1).replace('.', ',')}k` : `R$ ${v}`} />
                   <YAxis type="category" dataKey="category" fontSize={11} width={110} />
                   <Tooltip
                     contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }}
-                    formatter={(v, name, item) => [`R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, `${item.payload.itens} itens · ${item.payload.quantidade} un.`]}
+                    formatter={(v, name, item) => [currency(v), `${item.payload.itens} itens · ${nfmt(item.payload.quantidade)} un.`]}
                   />
                   <Bar dataKey="valor" radius={[0, 6, 6, 0]}>
                     {(analytics.categoryData || []).map((_, i) => (
@@ -514,7 +516,7 @@ function AnalyticsTab({ analytics }) {
                     <div className="flex items-center justify-between gap-3 mb-1.5">
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{c.name}</p>
-                        <p className="text-[11px] text-muted-foreground">{c.category} · {c.quantity} un. · saída média {c.dailyAvg}/dia</p>
+                        <p className="text-[11px] text-muted-foreground">{c.category} · {nfmt2(c.quantity)} un. · saída média {nfmt2(c.dailyAvg)}/dia</p>
                       </div>
                       <div className="text-right shrink-0">
                         <p className="text-sm font-bold" style={{ color: barColor }}>
@@ -672,7 +674,7 @@ export default function App() {
                       </div>
                       <CardContent className="p-3.5">
                         <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h3 className="truncate text-sm font-semibold">{p.name}</h3><p className="text-xs text-muted-foreground">{p.category}</p></div><span className="text-sm font-bold text-emerald-600 whitespace-nowrap">{currency(p.price)}</span></div>
-                        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground"><span>Estoque: <b className="text-foreground">{p.quantity} {p.unit || ''}</b></span><span>{dLeft >= 0 ? `${dLeft}d p/ vencer` : `Vencido há ${-dLeft}d`}</span></div>
+                        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground"><span>Estoque: <b className="text-foreground">{nfmt2(p.quantity)} {p.unit || ''}</b></span><span>{dLeft >= 0 ? `${dLeft}d p/ vencer` : `Vencido há ${-dLeft}d`}</span></div>
                         <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><MapPin className="h-3 w-3" /><span className="truncate">{p.location}</span></div>
                         <Separator className="my-3" />
                         <div className="flex gap-1.5">
@@ -719,7 +721,7 @@ export default function App() {
                           <div className="flex flex-wrap items-center gap-1.5"><p className="truncate text-sm font-medium">{p.name}</p><Badge variant="outline" className="text-[10px]">Cód. {p.codeKey}</Badge>{p.requiresRefrigeration && <Badge variant="secondary" className="text-[10px]"><Thermometer className="mr-0.5 h-2.5 w-2.5"/>Refrigerar</Badge>}</div>
                           <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"><MapPin className="h-3 w-3" /> Lote {p.lot} • {p.location}</p>
                         </div>
-                        <div className="text-right"><p className="text-sm font-semibold">{p.quantity} {p.unit || 'un'}</p><p className="text-xs text-muted-foreground">{d >= 0 ? `${d} dias` : `Vencido ${-d}d`}</p></div>
+                        <div className="text-right"><p className="text-sm font-semibold">{nfmt2(p.quantity)} {p.unit || 'un'}</p><p className="text-xs text-muted-foreground">{d >= 0 ? `${d} dias` : `Vencido ${-d}d`}</p></div>
                       </div>
                     )
                   })}
