@@ -365,10 +365,41 @@ async function handler(request, ctx) {
       const series = Object.values(dayMap)
       const outflows = series.map(s => s.saida).sort((a, b) => a - b)
       const median = outflows.length ? outflows[Math.floor(outflows.length / 2)] : 0
+      // Aggregate totals last 30d
+      const totalIn30 = series.reduce((s, x) => s + x.entrada, 0)
+      const totalOut30 = series.reduce((s, x) => s + x.saida, 0)
+      const avgDailyIn = Math.round(totalIn30 / 30)
+      const avgDailyOut = Math.round(totalOut30 / 30)
+      // Category breakdown by value
+      const byCategory = {}
+      products.forEach(p => {
+        const c = p.category || 'Outros'
+        if (!byCategory[c]) byCategory[c] = { category: c, quantidade: 0, valor: 0, itens: 0 }
+        byCategory[c].quantidade += p.quantity || 0
+        byCategory[c].valor += (p.quantity || 0) * (p.price || 0)
+        byCategory[c].itens += 1
+      })
+      const categoryData = Object.values(byCategory).map(c => ({
+        ...c, quantidade: Math.round(c.quantidade), valor: Number(c.valor.toFixed(2))
+      })).sort((a, b) => b.valor - a.valor)
+      // Coverage per product (days until stockout)
+      const outByProduct = {}
+      movements.forEach(m => {
+        if (m.type === 'out') outByProduct[m.productId] = (outByProduct[m.productId] || 0) + m.quantity
+      })
+      const coverage = products.map(p => {
+        const totalOut = outByProduct[p.id] || 0
+        const dailyAvg = totalOut / 30
+        const days = dailyAvg > 0 ? Math.floor((p.quantity || 0) / dailyAvg) : 999
+        return { name: p.name, code: p.code, category: p.category, quantity: p.quantity, dailyAvg: Number(dailyAvg.toFixed(2)), coverageDays: days > 999 ? 999 : days }
+      }).sort((a, b) => a.coverageDays - b.coverageDays).slice(0, 10)
       return json({
         totalProducts: products.length, totalStock: Math.round(totalStock),
         totalValue: Number(totalValue.toFixed(2)), series,
         projectedMonthly: Math.round(median * 30), medianDailyOut: median,
+        totalIn30, totalOut30, avgDailyIn, avgDailyOut,
+        balance30: totalIn30 - totalOut30,
+        categoryData, coverage,
       })
     }
 

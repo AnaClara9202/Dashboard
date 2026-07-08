@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
-  BarChart, Bar,
+  BarChart, Bar, Cell,
 } from 'recharts'
 
 import { Button } from '@/components/ui/button'
@@ -387,6 +387,163 @@ function AdminModal({ open, onClose }) {
   )
 }
 
+function AnalyticsTab({ analytics }) {
+  if (!analytics) return <div className="py-16 text-center text-sm text-muted-foreground">Carregando análise...</div>
+  const balance = analytics.balance30 || 0
+  const balancePositive = balance >= 0
+  const CHART_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#f43f5e', '#06b6d4']
+  return (
+    <div className="space-y-5">
+      {/* KPIs de análise */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="border-emerald-500/30 bg-emerald-500/5">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+              <ArrowDownToLine className="h-4 w-4" />
+              <p className="text-xs font-semibold uppercase">Entradas (30d)</p>
+            </div>
+            <p className="mt-1 text-2xl font-bold text-emerald-700 dark:text-emerald-400">{analytics.totalIn30}</p>
+            <p className="text-xs text-muted-foreground">média {analytics.avgDailyIn}/dia</p>
+          </CardContent>
+        </Card>
+        <Card className="border-rose-500/30 bg-rose-500/5">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-rose-700 dark:text-rose-400">
+              <ArrowUpFromLine className="h-4 w-4" />
+              <p className="text-xs font-semibold uppercase">Saídas (30d)</p>
+            </div>
+            <p className="mt-1 text-2xl font-bold text-rose-700 dark:text-rose-400">{analytics.totalOut30}</p>
+            <p className="text-xs text-muted-foreground">média {analytics.avgDailyOut}/dia</p>
+          </CardContent>
+        </Card>
+        <Card className={balancePositive ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'}>
+          <CardContent className="p-4">
+            <div className={`flex items-center gap-2 ${balancePositive ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
+              <TrendingUp className="h-4 w-4" />
+              <p className="text-xs font-semibold uppercase">Saldo (30d)</p>
+            </div>
+            <p className={`mt-1 text-2xl font-bold ${balancePositive ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
+              {balancePositive ? '+' : ''}{balance}
+            </p>
+            <p className="text-xs text-muted-foreground">{balancePositive ? 'estoque acumulando' : 'estoque diminuindo'}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-violet-500/30 bg-violet-500/5">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-violet-700 dark:text-violet-400">
+              <CalendarClock className="h-4 w-4" />
+              <p className="text-xs font-semibold uppercase">Projeção mensal</p>
+            </div>
+            <p className="mt-1 text-2xl font-bold text-violet-700 dark:text-violet-400">{analytics.projectedMonthly}</p>
+            <p className="text-xs text-muted-foreground">mediana × 30 dias</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Gráfico Entradas x Saídas */}
+      <Card className="border-border/60">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Movimentação diária (últimos 30 dias)</CardTitle>
+          <CardDescription>Barras verdes = entradas de estoque | Barras vermelhas = saídas para venda/produção</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={analytics.series || []} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                <XAxis dataKey="date" tickFormatter={v => v.slice(5)} fontSize={11} />
+                <YAxis fontSize={11} />
+                <Tooltip
+                  contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }}
+                  labelFormatter={v => `Dia ${v}`}
+                  formatter={(v, name) => [`${v} un.`, name === 'entrada' ? 'Entradas' : 'Saídas']}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} formatter={v => v === 'entrada' ? 'Entradas' : 'Saídas'} />
+                <Bar dataKey="entrada" fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="saida" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Valor por categoria */}
+        <Card className="border-border/60">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Valor em estoque por categoria</CardTitle>
+            <CardDescription>Onde está concentrado o capital do seu estoque.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={analytics.categoryData || []} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                  <XAxis type="number" fontSize={11} tickFormatter={v => `R$${(v/1000).toFixed(0)}k`} />
+                  <YAxis type="category" dataKey="category" fontSize={11} width={110} />
+                  <Tooltip
+                    contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }}
+                    formatter={(v, name, item) => [`R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, `${item.payload.itens} itens · ${item.payload.quantidade} un.`]}
+                  />
+                  <Bar dataKey="valor" radius={[0, 6, 6, 0]}>
+                    {(analytics.categoryData || []).map((_, i) => (
+                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Cobertura de estoque - top 10 mais urgentes */}
+        <Card className="border-border/60">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Cobertura de estoque</CardTitle>
+            <CardDescription>Dias até acabar o estoque no ritmo atual de saída. Reponha os primeiros da lista.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-border/60 max-h-72 overflow-y-auto">
+              {(analytics.coverage || []).map((c, i) => {
+                const urgent = c.coverageDays <= 7
+                const warn = c.coverageDays > 7 && c.coverageDays <= 21
+                const barPct = Math.min(100, (c.coverageDays / 60) * 100)
+                const barColor = urgent ? '#ef4444' : warn ? '#f59e0b' : '#10b981'
+                return (
+                  <div key={i} className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-3 mb-1.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{c.name}</p>
+                        <p className="text-[11px] text-muted-foreground">{c.category} · {c.quantity} un. · saída média {c.dailyAvg}/dia</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold" style={{ color: barColor }}>
+                          {c.coverageDays >= 999 ? '∞' : `${c.coverageDays}d`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${barPct}%`, background: barColor }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Explicação da metodologia */}
+      <Card className="border-border/60 bg-muted/20">
+        <CardContent className="p-4 text-xs text-muted-foreground leading-relaxed">
+          <p className="font-semibold text-foreground mb-1">💡 Como interpretar</p>
+          <p><b>Mediana</b> em vez de média para a projeção mensal — assim, um dia atípico (feriado, pico de vendas) não distorce o resultado. <b>Cobertura</b> = quantidade atual ÷ saída média diária. Produtos abaixo de 7 dias precisam reposição urgente.</p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 export default function App() {
   const [user, setUser] = useState(null)
   const [authChecked, setAuthChecked] = useState(false)
@@ -571,15 +728,7 @@ export default function App() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="analytics" className="space-y-4">
-            <Card className="border-border/60"><CardHeader className="pb-2"><CardTitle className="text-base">Entradas × Saídas por dia</CardTitle><CardDescription>Visualização em barras dos últimos 30 dias.</CardDescription></CardHeader>
-              <CardContent><div className="h-72 w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={analytics?.series || []} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" opacity={0.2} /><XAxis dataKey="date" tickFormatter={v => v.slice(5)} fontSize={11} /><YAxis fontSize={11} /><Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="entrada" fill="#10b981" radius={[4, 4, 0, 0]} /><Bar dataKey="saida" fill="#f43f5e" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></CardContent>
-            </Card>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Card className="border-border/60"><CardContent className="p-5"><p className="text-xs uppercase text-muted-foreground">Mediana diária de saídas</p><p className="mt-1 text-3xl font-bold">{analytics?.medianDailyOut ?? 0} un.</p><p className="mt-1 text-xs text-muted-foreground">Medida robusta que ignora outliers.</p></CardContent></Card>
-              <Card className="border-emerald-500/30"><CardContent className="p-5"><p className="text-xs uppercase text-muted-foreground">Projeção mensal</p><p className="mt-1 text-3xl font-bold text-emerald-600">{analytics?.projectedMonthly ?? 0} un.</p><p className="mt-1 text-xs text-muted-foreground">Mediana × 30 dias.</p></CardContent></Card>
-            </div>
-          </TabsContent>
+          <TabsContent value="analytics"><AnalyticsTab analytics={analytics} /></TabsContent>
 
           <TabsContent value="sanitary"><SanitaryTab /></TabsContent>
           <TabsContent value="excel"><ExcelTab reload={loadAll} /></TabsContent>
